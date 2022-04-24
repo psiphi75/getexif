@@ -1,6 +1,6 @@
 use chrono::{DateTime, NaiveDateTime, SecondsFormat, Utc};
 use serde_json::{Map, Number, Value};
-use std::{error::Error, time::SystemTime};
+use std::{error::Error, path::Path, time::SystemTime};
 
 fn to_utc(sys_time: SystemTime) -> String {
     let dt = DateTime::<Utc>::from(sys_time);
@@ -65,49 +65,63 @@ fn get_date_from_ascii(exif: &exif::Exif, tag: exif::Tag) -> Option<String> {
     Some(result)
 }
 
-pub fn jpeg_to_metadata(path: &std::path::Path) -> Result<Map<String, Value>, Box<dyn Error>> {
+fn read_file_stat(path: &Path, map: &mut Map<String, Value>) -> Result<(), Box<dyn Error>> {
     let data = std::fs::metadata(path)?;
-
-    let mut result = Map::new();
 
     let filename = match path.file_name() {
         Some(f) => f.to_string_lossy().to_string(),
         None => return Err(String::from("Invalid file provided").into()),
     };
-    result.insert("filename".to_string(), Value::String(filename));
-    result.insert(
+    map.insert("filename".to_string(), Value::String(filename));
+    map.insert(
         "size".to_string(),
         Value::Number(serde_json::Number::from(data.len())),
     );
-    result.insert(
+    map.insert(
         "created_time".to_string(),
         Value::String(to_utc(data.created()?)),
     );
-    result.insert(
+    map.insert(
         "modified_time".to_string(),
         Value::String(to_utc(data.modified()?)),
     );
 
+    Ok(())
+}
+
+fn read_exif_data(path: &Path, map: &mut Map<String, Value>) -> Result<(), Box<dyn Error>> {
     let file = std::fs::File::open(path)?;
     let mut bufreader = std::io::BufReader::new(&file);
     let exifreader = exif::Reader::new();
     let exif = exifreader.read_from_container(&mut bufreader)?;
 
     if let Some(v) = get_short(&exif, exif::Tag::Orientation) {
-        result.insert("orientation".to_string(), Value::Number(Number::from(v)));
+        map.insert("orientation".to_string(), Value::Number(Number::from(v)));
     }
 
     if let Some(v) = get_date_from_ascii(&exif, exif::Tag::DateTimeOriginal) {
-        result.insert("capture_time".to_string(), Value::String(v));
+        map.insert("capture_time".to_string(), Value::String(v));
     }
 
     if let Some(v) = get_ascii(&exif, exif::Tag::Model) {
-        result.insert("camera_model".to_string(), Value::String(v));
+        map.insert("camera_model".to_string(), Value::String(v));
     }
 
     if let Some(v) = get_ascii(&exif, exif::Tag::BodySerialNumber) {
-        result.insert("camera_serial".to_string(), Value::String(v));
+        map.insert("camera_serial".to_string(), Value::String(v));
     }
 
-    return Ok(result);
+    Ok(())
+}
+
+pub fn jpeg_to_metadata(path: &Path) -> Result<Map<String, Value>, Box<dyn Error>> {
+    let mut map = Map::new();
+
+    // Read the filesystem details
+    read_file_stat(path, &mut map)?;
+
+    // Read the exif data from the image
+    read_exif_data(path, &mut map)?;
+
+    return Ok(map);
 }
