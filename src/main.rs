@@ -1,4 +1,4 @@
-use std::time::SystemTime;
+use std::{error::Error, time::SystemTime};
 
 use clap::Parser;
 
@@ -15,7 +15,46 @@ fn to_utc(sys_time: SystemTime) -> String {
     dt.to_rfc3339_opts(SecondsFormat::Millis, true)
 }
 
-fn jpeg_to_metadata(path: &std::path::Path) -> std::io::Result<String> {
+fn get_ascii(exif: &exif::Exif, tag: exif::Tag) -> Option<String> {
+    let f = exif.get_field(tag, exif::In::PRIMARY);
+    if f.is_none() {
+        return None;
+    }
+    let ascii = &f.unwrap().value;
+
+    if let exif::Value::Ascii(value) = ascii {
+        // FIXME: We've hardcoded the "value[0]", works for this little program
+        //        but should review this for production.
+        let buf = value[0].to_owned();
+
+        match String::from_utf8(buf) {
+            Ok(v) => return Some(v),
+            Err(_) => return None,
+        };
+    }
+
+    return None;
+}
+
+fn get_short(exif: &exif::Exif, tag: exif::Tag) -> Option<u16> {
+    let f = exif.get_field(tag, exif::In::PRIMARY);
+    if f.is_none() {
+        return None;
+    }
+    let short = &f.unwrap().value;
+
+    if let exif::Value::Short(value) = short {
+        // FIXME: We've hardcoded the "value[0]", works for this little program
+        //        but should review this for production.
+        let v = value[0];
+
+        return Some(v);
+    }
+
+    return None;
+}
+
+fn jpeg_to_metadata(path: &std::path::Path) -> Result<String, Box<dyn Error>> {
     let data = std::fs::metadata(path)?;
 
     println!("filename={:?}", path.file_stem());
@@ -26,28 +65,28 @@ fn jpeg_to_metadata(path: &std::path::Path) -> std::io::Result<String> {
     let file = std::fs::File::open(path)?;
     let mut bufreader = std::io::BufReader::new(&file);
     let exifreader = exif::Reader::new();
-    let exif = exifreader.read_from_container(&mut bufreader).unwrap();
-    let f = exif
-        .get_field(exif::Tag::Orientation, exif::In::PRIMARY)
-        .unwrap();
-    println!("orientation={:?}", f.value);
+    let exif = exifreader.read_from_container(&mut bufreader)?;
 
-    let f = exif
-        .get_field(exif::Tag::DateTimeOriginal, exif::In::PRIMARY)
-        .unwrap();
-    println!("capture_time={:?}", f.value);
+    if let Some(v) = get_short(&exif, exif::Tag::Orientation) {
+        println!("orientation={}", v);
+    }
 
-    let f = exif.get_field(exif::Tag::Model, exif::In::PRIMARY).unwrap();
-    println!("camera_model={:?}", f.value);
+    if let Some(v) = get_ascii(&exif, exif::Tag::DateTimeOriginal) {
+        println!("capture_time={}", v);
+    }
 
-    let f = exif
-        .get_field(exif::Tag::BodySerialNumber, exif::In::PRIMARY)
-        .unwrap();
-    println!("camera_serial={:?}", f.value);
+    if let Some(v) = get_ascii(&exif, exif::Tag::Model) {
+        println!("camera_model={}", v);
+    }
+
+    if let Some(v) = get_ascii(&exif, exif::Tag::BodySerialNumber) {
+        println!("camera_serial={}", v);
+    }
+
     Ok("".to_string())
 }
 
-fn main() {
+fn main() -> Result<(), Box<dyn Error>> {
     let args = Cli::parse();
 
     if args.files.len() == 0 {
@@ -57,6 +96,8 @@ fn main() {
 
     for file in &args.files {
         println!("{}", file);
-        jpeg_to_metadata(std::path::Path::new(file)).unwrap();
+        jpeg_to_metadata(std::path::Path::new(file))?;
     }
+
+    Ok(())
 }
