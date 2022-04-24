@@ -1,6 +1,6 @@
-use std::{error::Error, time::SystemTime};
-
 use clap::Parser;
+use serde_json::{Map, Number, Value};
+use std::{error::Error, fs::File, time::SystemTime};
 
 #[derive(Parser)]
 #[clap(author, version, about, long_about = None)]
@@ -54,13 +54,28 @@ fn get_short(exif: &exif::Exif, tag: exif::Tag) -> Option<u16> {
     return None;
 }
 
-fn jpeg_to_metadata(path: &std::path::Path) -> Result<String, Box<dyn Error>> {
+fn jpeg_to_metadata(path: &std::path::Path) -> Result<Map<String, Value>, Box<dyn Error>> {
     let data = std::fs::metadata(path)?;
 
-    println!("filename={:?}", path.file_stem());
-    println!("size={:?}", data.len());
-    println!("created_time={:?}", to_utc(data.created()?));
-    println!("modified_time={:?}", to_utc(data.modified()?));
+    let mut result = Map::new();
+
+    let filename = match path.file_name() {
+        Some(f) => f.to_string_lossy().to_string(),
+        None => return Err(String::from("Invalid file provided").into()),
+    };
+    result.insert("filename".to_string(), Value::String(filename));
+    result.insert(
+        "size".to_string(),
+        Value::Number(serde_json::Number::from(data.len())),
+    );
+    result.insert(
+        "created_time".to_string(),
+        Value::String(to_utc(data.created()?)),
+    );
+    result.insert(
+        "modified_time".to_string(),
+        Value::String(to_utc(data.modified()?)),
+    );
 
     let file = std::fs::File::open(path)?;
     let mut bufreader = std::io::BufReader::new(&file);
@@ -68,22 +83,37 @@ fn jpeg_to_metadata(path: &std::path::Path) -> Result<String, Box<dyn Error>> {
     let exif = exifreader.read_from_container(&mut bufreader)?;
 
     if let Some(v) = get_short(&exif, exif::Tag::Orientation) {
-        println!("orientation={}", v);
+        result.insert("orientation".to_string(), Value::Number(Number::from(v)));
     }
 
     if let Some(v) = get_ascii(&exif, exif::Tag::DateTimeOriginal) {
-        println!("capture_time={}", v);
+        result.insert("capture_time".to_string(), Value::String(v));
     }
 
     if let Some(v) = get_ascii(&exif, exif::Tag::Model) {
-        println!("camera_model={}", v);
+        result.insert("camera_model".to_string(), Value::String(v));
     }
 
     if let Some(v) = get_ascii(&exif, exif::Tag::BodySerialNumber) {
-        println!("camera_serial={}", v);
+        result.insert("camera_serial".to_string(), Value::String(v));
     }
 
-    Ok("".to_string())
+    return Ok(result);
+}
+
+fn save_metadata(
+    path: &std::path::Path,
+    json_data: &Map<String, Value>,
+) -> Result<(), Box<dyn Error>> {
+    // Create the .JSON path
+    let mut json_path = std::path::PathBuf::new();
+    json_path.push(path);
+    json_path.set_extension("json");
+
+    // Save the JSON to the file
+    serde_json::to_writer_pretty(&File::create(json_path)?, json_data).unwrap();
+
+    Ok(())
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
@@ -94,9 +124,15 @@ fn main() -> Result<(), Box<dyn Error>> {
         std::process::exit(0x01);
     }
 
+    // TODO: Conver to functional iterator style, async and run in parallel (only one thread)
     for file in &args.files {
         println!("{}", file);
-        jpeg_to_metadata(std::path::Path::new(file))?;
+        let path = std::path::Path::new(file);
+
+        let metadata = jpeg_to_metadata(path)?;
+        // println!("{}", metadata);
+
+        save_metadata(path, &metadata)?;
     }
 
     Ok(())
