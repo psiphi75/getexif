@@ -8,7 +8,7 @@ struct Cli {
     files: Vec<String>,
 }
 
-use chrono::{DateTime, SecondsFormat, Utc};
+use chrono::{DateTime, NaiveDateTime, SecondsFormat, Utc};
 
 fn to_utc(sys_time: SystemTime) -> String {
     let dt = DateTime::<Utc>::from(sys_time);
@@ -54,6 +54,25 @@ fn get_short(exif: &exif::Exif, tag: exif::Tag) -> Option<u16> {
     return None;
 }
 
+fn get_date_from_ascii(exif: &exif::Exif, tag: exif::Tag) -> Option<String> {
+    let f = get_ascii(exif, tag);
+    if f.is_none() {
+        return None;
+    }
+
+    let date_str = &f.unwrap();
+    let dt = NaiveDateTime::parse_from_str(date_str, "%Y:%m:%d %H:%M:%S");
+    if dt.is_err() {
+        eprintln!("Error parsing date: {:?}, date input={:?}", dt, date_str);
+        return None;
+    }
+
+    // FIXME: This does not give the date we expect
+    let result = dt.unwrap().to_string();
+
+    Some(result)
+}
+
 fn jpeg_to_metadata(path: &std::path::Path) -> Result<Map<String, Value>, Box<dyn Error>> {
     let data = std::fs::metadata(path)?;
 
@@ -86,7 +105,7 @@ fn jpeg_to_metadata(path: &std::path::Path) -> Result<Map<String, Value>, Box<dy
         result.insert("orientation".to_string(), Value::Number(Number::from(v)));
     }
 
-    if let Some(v) = get_ascii(&exif, exif::Tag::DateTimeOriginal) {
+    if let Some(v) = get_date_from_ascii(&exif, exif::Tag::DateTimeOriginal) {
         result.insert("capture_time".to_string(), Value::String(v));
     }
 
