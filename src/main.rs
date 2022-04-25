@@ -1,7 +1,11 @@
 use clap::Parser;
 use rayon::prelude::*;
 use serde_json::{Map, Value};
-use std::{error::Error, fs::File};
+use std::{
+    error::Error,
+    fs::File,
+    path::{Path, PathBuf},
+};
 
 mod exif_reader;
 
@@ -11,17 +15,14 @@ struct Cli {
     files: Vec<String>,
 }
 
-fn save_metadata(
-    path: &std::path::Path,
-    json_data: &Map<String, Value>,
-) -> Result<(), Box<dyn Error>> {
+fn save_metadata(path: &Path, json_data: &Map<String, Value>) -> Result<(), Box<dyn Error>> {
     // Create the .JSON path
-    let mut json_path = std::path::PathBuf::new();
+    let mut json_path = PathBuf::new();
     json_path.push(path);
     json_path.set_extension("json");
 
     // Save the JSON to the file
-    serde_json::to_writer_pretty(&File::create(json_path)?, json_data).unwrap();
+    serde_json::to_writer_pretty(&File::create(json_path)?, json_data)?;
 
     Ok(())
 }

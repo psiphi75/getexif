@@ -114,6 +114,14 @@ fn read_exif_data(path: &Path, map: &mut Map<String, Value>) -> Result<(), Box<d
     Ok(())
 }
 
+///
+/// Read the Exif data and some file system info from a .JPG/.JPEG file give by
+/// `path`.
+///
+/// Returns
+///  - `Result` with a key-value map of the key as the properties names and
+///    `serde_json::Value` that can easily be converted to a JSON file.
+///
 pub fn jpeg_to_metadata(path: &Path) -> Result<Map<String, Value>, Box<dyn Error>> {
     let mut map = Map::new();
 
