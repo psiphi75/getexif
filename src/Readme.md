@@ -17,3 +17,4 @@ cargo run -- samples/sample.jpg
 - 12:45 to 13:25 - First commit.
 - 13:50 to 14:30 - Second block.
 - 14:50 to 16:40 - Complete, but needs tidy.
+- 11:25 to 12:05 - Done.
