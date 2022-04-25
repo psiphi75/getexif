@@ -1,4 +1,5 @@
 use clap::Parser;
+use rayon::prelude::*;
 use serde_json::{Map, Value};
 use std::{error::Error, fs::File};
 
@@ -33,15 +34,21 @@ fn main() -> Result<(), Box<dyn Error>> {
         std::process::exit(0x01);
     }
 
-    // TODO: Conver to functional iterator style, async and run in parallel (only one thread)
-    for file in &args.files {
+    // TODO: Should use the number of CPUs available, or find the a good
+    //       balance.  IO is likely to be the bottleneck, not CPU, so want to
+    //       test this a bit.
+    rayon::ThreadPoolBuilder::new()
+        .num_threads(4)
+        .build_global()?;
+
+    args.files.par_iter().for_each(|file| {
         println!("{}", file);
-        let path = std::path::Path::new(file);
+        let path = Path::new(file);
 
-        let metadata = exif_reader::jpeg_to_metadata(path)?;
-
-        save_metadata(path, &metadata)?;
-    }
+        // FIXME: Need to handle these results, and not use `unwrap()`.
+        let metadata = exif_reader::jpeg_to_metadata(path).unwrap();
+        save_metadata(path, &metadata).unwrap();
+    });
 
     Ok(())
 }
